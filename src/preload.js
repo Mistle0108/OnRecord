@@ -1,0 +1,28 @@
+const { contextBridge, ipcRenderer } = require('electron');
+contextBridge.exposeInMainWorld('onrecord', {
+  sources: (type) => ipcRenderer.invoke('sources', type),
+  selectSource: (id, audio) => ipcRenderer.invoke('select-source', id, audio),
+  chooseRegion: () => ipcRenderer.invoke('choose-region'),
+  closeRegion: () => ipcRenderer.invoke('close-region'),
+  updateRegion: (update) => ipcRenderer.send('update-region', update),
+  regionPhase: (phase) => ipcRenderer.send('region-phase', phase),
+  onRegionState: (callback) => ipcRenderer.on('region-state', (_, state) => callback(state)),
+  onRegionChanged: (callback) => ipcRenderer.on('region-changed', (_, state) => callback(state)),
+  onRegionClosed: (callback) => ipcRenderer.on('region-closed', () => callback()),
+  folder: () => ipcRenderer.invoke('folder'),
+  preferences: () => ipcRenderer.invoke('preferences'),
+  savePreferences: (values) => ipcRenderer.invoke('save-preferences', values),
+  onPreferencesError: (callback) => ipcRenderer.on('preferences-error', (_, message) => callback(message)),
+  begin: (options) => ipcRenderer.invoke('begin', options),
+  chunk: (data) => ipcRenderer.invoke('chunk', data),
+  finish: () => ipcRenderer.invoke('finish'),
+  abort: () => ipcRenderer.invoke('abort'),
+  state: (state) => ipcRenderer.send('state', state),
+  command: (command) => ipcRenderer.send('command', command),
+  openFile: () => ipcRenderer.invoke('open-file'),
+  revealFile: () => ipcRenderer.invoke('reveal-file'),
+  window: (action) => ipcRenderer.send('window', action),
+  onWindowState: (callback) => ipcRenderer.on('window-state', (_, maximized) => callback(maximized)),
+  onCommand: (callback) => ipcRenderer.on('command', (_, command) => callback(command)),
+  onState: (callback) => ipcRenderer.on('state', (_, state) => callback(state))
+});

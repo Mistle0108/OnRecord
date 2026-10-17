@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="UTF-8"><meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'"><link rel="stylesheet" href="region.css"><title>OnRecord 녹화 영역</title></head>
+<body>
+  <div id="region-toolbar"><button id="region-move" data-edge="move" title="드래그해서 녹화 영역 이동"><span data-icon="move"></span><span id="region-size">녹화 영역</span></button><button id="region-close" title="영역 지정 취소" aria-label="영역 지정 취소"><span data-icon="close"></span></button></div>
+  <div id="region-frame" aria-label="녹화 영역 테두리">
+    <div class="edge n" data-edge="n"></div><div class="edge s" data-edge="s"></div><div class="edge w" data-edge="w"></div><div class="edge e" data-edge="e"></div>
+    <div class="handle nw" data-edge="nw"></div><div class="handle n" data-edge="n"></div><div class="handle ne" data-edge="ne"></div><div class="handle e" data-edge="e"></div><div class="handle se" data-edge="se"></div><div class="handle s" data-edge="s"></div><div class="handle sw" data-edge="sw"></div><div class="handle w" data-edge="w"></div>
+  </div>
+  <script src="icons.js"></script><script src="region.js"></script>
+</body></html>
