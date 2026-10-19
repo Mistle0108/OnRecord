@@ -52,7 +52,7 @@ function setPhase(next) {
   $('#record').classList.toggle('is-recording', next === 'recording');
   window.recordIcons.set('.record-dot', next === 'recording' ? 'stop' : 'record');
   $('#record-label').textContent = { idle: '녹화 시작', starting: '준비 중', countdown: '시작 대기', recording: '녹화 종료', saving: '저장 중' }[next];
-  $('#status').textContent = { idle: '녹화 준비', starting: '장치 확인 중', countdown: '잠시 후 시작합니다', recording: '녹화 중', saving: $('#format').value === 'mp4' && $('#compression').value !== 'none' ? '용량을 줄여 저장하고 있어요' : '영상을 저장하고 있어요' }[next];
+  $('#status').textContent = { idle: '녹화 준비', starting: '장치 확인 중', countdown: '잠시 후 시작합니다', recording: '녹화 중', saving: '영상을 저장하고 있어요' }[next];
   $('#capture-label').textContent = next === 'recording' ? '녹화 중' : '준비';
 }
 function stopTracks(stream) { stream?.getTracks().forEach((track) => track.stop()); }
@@ -300,7 +300,12 @@ async function startRecording() {
       : hasAudio ? ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus'] : ['video/webm;codecs=vp9', 'video/webm;codecs=vp8'];
     const mimeType = candidates.find((mime) => MediaRecorder.isTypeSupported(mime));
     if (!mimeType) throw new Error('현재 환경에서 선택한 녹화 코덱을 지원하지 않습니다. WebM 형식을 선택해 주세요.');
-    recorder = new MediaRecorder(recordedStream, { mimeType, videoBitsPerSecond: $('#quality').value === 'high' ? 12000000 : 6000000, audioBitsPerSecond: 320000 });
+    const fps = Number($('#fps').value);
+    const bitsPerPixel = { none: .12, fast: .06, medium: .03 }[$('#compression').value];
+    const videoBitsPerSecond = $('#format').value === 'mp4'
+      ? Math.max(200000, Math.round(canvas.width * canvas.height * fps * bitsPerPixel * ($('#quality').value === 'high' ? 1 : .7)))
+      : $('#quality').value === 'high' ? 12000000 : 6000000;
+    recorder = new MediaRecorder(recordedStream, { mimeType, videoBitsPerSecond, audioBitsPerSecond: 320000 });
     writeError = null; chunkQueue = Promise.resolve();
     recorder.ondataavailable = (event) => {
       if (!event.data.size) return;

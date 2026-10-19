@@ -94,6 +94,7 @@ function streamRange(file, stream) {
       await page.locator('#fps').selectOption(fps);
       await page.locator('#record').click();
       await page.waitForFunction(() => document.querySelector('#record-label').textContent === '녹화 종료');
+      const encoding = await page.evaluate(() => ({ actual: recorder.videoBitsPerSecond, width: canvas.width, height: canvas.height }));
       const samples = [];
       for (let elapsed = 0; elapsed < seconds;) {
         const wait = Math.min(10000, (seconds - elapsed) * 1000);
@@ -118,8 +119,7 @@ function streamRange(file, stream) {
       const saved = await page.locator('#result-path').getAttribute('title');
       const captured = path.join(output, 'original-' + path.basename(saved).replace('.mp4', '.capture.mp4'));
       const hash = videoHash(captured);
-      if (compression === 'none') assert.equal(videoHash(saved), hash, 'Quick save must preserve encoded video packets');
-      else assert.notEqual(videoHash(saved), hash, 'Video must be compressed on save');
+      assert.equal(videoHash(saved), hash, 'Every profile must preserve video packets without post-recording encoding');
       assert.equal(videoFrames(saved), videoFrames(captured), 'Compression must preserve every video frame');
       if (audio) assert.equal(audioHash(saved), audioHash(captured), 'Compressed audio packets must remain unchanged');
       const probe = spawnSync(ffmpeg, ['-hide_banner', '-i', saved], { windowsHide: true, encoding: 'utf8' }).stderr;
@@ -147,9 +147,11 @@ function streamRange(file, stream) {
       assert.ok(playback.duration > seconds - 1);
       assert.ok(playback.seekTime > seconds / 3);
       const sizes = { original: (await fs.stat(captured)).size, compressed: (await fs.stat(saved)).size };
-      if (compression !== 'none') assert.ok(sizes.compressed < sizes.original, 'Screen recording must shrink after compression');
-      recordings.push({ compression, audio, fps, seconds, saveMs, saved, captured, sizes, timing, playback, samples, shellAfterSave: checkShell() });
+
+      recordings.push({ compression, encoding, audio, fps, seconds, saveMs, saved, captured, sizes, timing, playback, samples, shellAfterSave: checkShell() });
     }
+    const ratePerPixel = recordings.map(item => item.encoding.actual / (item.encoding.width * item.encoding.height * Number(item.fps)));
+    assert.ok(ratePerPixel[0] < ratePerPixel[1] && ratePerPixel[1] < ratePerPixel[2], 'Profiles must allocate increasing recording data from size priority to quality priority');
     // Simulate finalization failure and check that the next recording can still start.
     await app.evaluate(() => { global.failNextSave = true; });
     await page.locator('#record').click();

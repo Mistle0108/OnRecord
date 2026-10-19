@@ -157,9 +157,9 @@ ipcMain.handle('finish', async (event) => {
     const reservation = await fs.open(temporary, 'wx');
     await reservation.close();
     await new Promise((resolve, reject) => {
-      // All modes preserve audio; keep the capture until finalization succeeds.
-      const codecs = options.compression === 'none' ? ['-c', 'copy'] : ['-c:v', 'libx264', '-preset', options.compression, '-crf', '20', '-fps_mode:v', 'passthrough', '-enc_time_base:v', '-1', '-c:a', 'copy'];
-      const process = spawn(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y', '-i', recordingFile, '-map', '0:v:0', '-map', '0:a:0?', ...codecs, '-movflags', '+faststart', '-f', 'mp4', temporary], { windowsHide: true });
+      // Encoding is complete during capture. Only rebuild the seek index here.
+      // Keep both encoded streams and their timestamps unchanged.
+      const process = spawn(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y', '-i', recordingFile, '-map', '0:v:0', '-map', '0:a:0?', '-c', 'copy', '-movflags', '+faststart', '-f', 'mp4', temporary], { windowsHide: true });
       let error = '';
       process.stderr.on('data', (data) => { error = (error + data).slice(-4000); });
       process.on('error', reject);
