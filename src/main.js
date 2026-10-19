@@ -35,7 +35,7 @@ async function abort() {
   recording = false;
   stopBlocker();
   showMain();
-  // Preserve partial footage if recording or conversion fails.
+  // Preserve partial footage if recording or finalization fails.
   return recordingFile;
 }
 app.whenReady().then(async () => {
@@ -59,8 +59,16 @@ app.whenReady().then(async () => {
     onChanged: (state) => mainWindow.webContents.send('region-changed', state),
     onClosed: () => { if (!mainWindow.isDestroyed()) mainWindow.webContents.send('region-closed'); }
   });
-  const area = screen.getPrimaryDisplay().workArea;
-  controlsWindow = secureWindow({ width: 350, height: 94, x: area.x + area.width - 374, y: area.y + area.height - 118, frame: false, show: false, resizable: false, alwaysOnTop: true, skipTaskbar: true, backgroundColor: '#ffffff' }, 'controls.html');
+  const savedPosition = preferences.get().controlsPosition;
+  const area = (savedPosition ? screen.getDisplayMatching({ ...savedPosition, width: 350, height: 94 }) : screen.getPrimaryDisplay()).workArea;
+  const position = savedPosition || { x: area.x + area.width - 374, y: area.y + area.height - 118 };
+  const x = Math.max(area.x, Math.min(area.x + area.width - 350, position.x));
+  const y = Math.max(area.y, Math.min(area.y + area.height - 94, position.y));
+  controlsWindow = secureWindow({ width: 350, height: 94, x, y, frame: false, show: false, resizable: false, alwaysOnTop: true, skipTaskbar: true, backgroundColor: '#ffffff' }, 'controls.html');
+  controlsWindow.on('move', () => {
+    const { x, y } = controlsWindow.getBounds();
+    preferences.update({ controlsPosition: { x, y } });
+  });
   controlsWindow.on('close', (event) => { if (recording) { event.preventDefault(); command('stop'); } });
   mainWindow.on('close', (event) => {
     if (recording || busy) { event.preventDefault(); if (recording) command('stop'); return; }
@@ -100,10 +108,12 @@ ipcMain.handle('folder', async (event) => {
 ipcMain.handle('begin', async (event, options) => {
   if (!trusted(event) || recording || busy) throw new Error('이미 녹화 또는 저장 중입니다.');
   if (!options || !['mp4', 'webm'].includes(options.format)) throw new Error('녹음 설정이 올바르지 않습니다.');
-  recordingOptions = { ...options, hasAudio: !!options.hasAudio };
+  const compression = options.compression ?? 'medium';
+  if (!['none', 'fast', 'medium'].includes(compression)) throw new Error('저장 압축 설정이 올바르지 않습니다.');
+  recordingOptions = { format: options.format, compression };
   await fs.mkdir(outputDirectory, { recursive: true });
   const name = `OnRecord-${new Date().toISOString().replace(/[:.]/g, '-')}`;
-  const extension = recordingOptions.hasAudio && recordingOptions.format === 'mp4' ? 'mp4' : 'webm';
+  const extension = recordingOptions.format;
   recordingFile = path.join(outputDirectory, `${name}.capture.${extension}`);
   fileHandle = await fs.open(recordingFile, 'wx');
   writeQueue = Promise.resolve();
@@ -131,6 +141,7 @@ ipcMain.handle('finish', async (event) => {
   busy = true;
   try {
     await writeQueue;
+    await fileHandle.sync();
     await fileHandle.close(); fileHandle = null;
     recording = false; stopBlocker(); showMain();
     const options = recordingOptions;
@@ -141,13 +152,20 @@ ipcMain.handle('finish', async (event) => {
       return { path: lastFile };
     }
     const ffmpeg = require('ffmpeg-static').replace('app.asar', 'app.asar.unpacked');
+    const temporary = `${output}.finalizing`;
+    // Reserve this path before allowing FFmpeg to overwrite our own empty file.
+    const reservation = await fs.open(temporary, 'wx');
+    await reservation.close();
     await new Promise((resolve, reject) => {
-      const process = spawn(ffmpeg, ['-hide_banner', '-nostdin', '-i', recordingFile, '-map', '0:v:0', '-map', '0:a:0?', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', options.quality === 'high' ? '19' : '24', '-r', options.fps === 60 ? '60' : '30', '-pix_fmt', 'yuv420p', '-c:a', 'copy', ...(options.format === 'mp4' ? ['-movflags', '+faststart'] : []), output], { windowsHide: true });
+      // Encoding is complete during capture. Only rebuild the seek index here.
+      // Keep both encoded streams and their timestamps unchanged.
+      const process = spawn(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y', '-i', recordingFile, '-map', '0:v:0', '-map', '0:a:0?', '-c', 'copy', '-movflags', '+faststart', '-f', 'mp4', temporary], { windowsHide: true });
       let error = '';
       process.stderr.on('data', (data) => { error = (error + data).slice(-4000); });
       process.on('error', reject);
-      process.on('close', (code) => code === 0 ? resolve() : reject(new Error(`영상 저장 실패. 원본 보존: ${recordingFile}\n${error}`)));
+      process.on('close', (code) => code === 0 && !error.trim() ? resolve() : reject(new Error(`영상 저장 실패. 원본 보존: ${recordingFile}\n${error}`)));
     });
+    await fs.rename(temporary, output);
     lastFile = output;
     await fs.unlink(recordingFile);
     return { path: lastFile };
@@ -164,4 +182,5 @@ ipcMain.on('window', (event, action) => {
   if (action === 'close') mainWindow.close();
 });
 ipcMain.handle('open-file', (event) => { if (trusted(event) && lastFile) return shell.openPath(lastFile); });
+ipcMain.handle('open-directory', (event) => { if (trusted(event)) return shell.openPath(outputDirectory); });
 ipcMain.handle('reveal-file', (event) => { if (trusted(event) && lastFile) shell.showItemInFolder(lastFile); });

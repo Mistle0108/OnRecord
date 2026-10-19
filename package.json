@@ -1,6 +1,6 @@
 {
   "name": "onrecord",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "화면과 소리를 간편하게 기록하는 Windows 데스크톱 앱",
   "main": "src/main.js",
   "private": true,
@@ -11,7 +11,8 @@
     "test": "node tests/smoke.cjs",
     "test:audio": "node tests/audio-quality.cjs",
     "test:preferences": "node tests/preferences.cjs",
-    "dist": "electron-builder --win portable"
+    "test:saving": "node tests/recording-finalization.cjs",
+    "dist": "electron-builder --win --dir"
   },
   "dependencies": {
     "ffmpeg-static": "5.3.0"
@@ -35,7 +36,8 @@
       "output": "release"
     },
     "win": {
-      "target": "portable",
+      "target": "zip",
+      "artifactName": "${productName}-${version}-win-${arch}.${ext}",
       "icon": "src/assets/onrecord-icon.ico",
       "signExecutable": false
     }

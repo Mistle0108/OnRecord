@@ -28,7 +28,7 @@ const { createHash } = require('node:crypto');
     for (const key of ['echoCancellation', 'noiseSuppression', 'autoGainControl']) if (key in captureSettings) assert.equal(captureSettings[key], false, key);
     // Measure codec loss with a controlled signal: other applications can add
     // arbitrary audio to Windows loopback, so live sound cannot be an SNR reference.
-    await page.evaluate(async () => {
+    async function injectTone() { await page.evaluate(async () => {
       const ctx = new AudioContext({ sampleRate: 48000 });
       await ctx.resume();
       const merger = ctx.createChannelMerger(2), destination = ctx.createMediaStreamDestination();
@@ -42,7 +42,8 @@ const { createHash } = require('node:crypto');
       for (const track of stream.getAudioTracks()) { stream.removeTrack(track); track.stop(); }
       destination.stream.getAudioTracks().forEach((track) => stream.addTrack(track));
       window.testTone = { ctx, oscillators };
-      const NativeRecorder = window.MediaRecorder;
+      const NativeRecorder = window.testNativeRecorder || window.MediaRecorder;
+      window.testNativeRecorder = NativeRecorder;
       window.MediaRecorder = class extends NativeRecorder {
         constructor(...args) {
           super(...args);
@@ -51,11 +52,15 @@ const { createHash } = require('node:crypto');
           this.addEventListener('dataavailable', (event) => window.testCaptureChunks.push(event.data));
         }
       };
-    });
+    }); }
     const recordings = [];
     for (const { format, paused } of [{ format: 'mp4', paused: false }, { format: 'webm', paused: false }, { format: 'mp4', paused: true }, { format: 'webm', paused: true }]) {
       await page.locator('#format').selectOption(format);
       assert.equal(await page.locator('#format').inputValue(), format);
+      if (!(await page.evaluate(() => !!document.querySelector('#source-video').srcObject))) {
+        await page.evaluate(async () => { await connectScreen(source, crop); });
+      }
+      await injectTone();
       await page.locator('#record').click();
       await page.waitForFunction(() => document.querySelector('#record-label').textContent === '녹화 종료');
       if (paused) {
@@ -91,8 +96,8 @@ const { createHash } = require('node:crypto');
       const originalAudio = audioBytes(captured), savedAudio = audioBytes(saved);
       assert.ok(originalAudio.equals(savedAudio), `${format}: saved audio must match the captured audio exactly`);
       const audioHash = createHash('sha256').update(savedAudio).digest('hex');
-      // Stopping recorder clones must leave the preview source alive.
-      assert.equal(await page.evaluate(() => document.querySelector('#source-video').srcObject.getAudioTracks()[0].readyState), 'live');
+      assert.equal(await page.evaluate(() => document.querySelector('#source-video').srcObject), null);
+      await page.evaluate(async () => { await window.testTone.ctx.close(); });
       const decode = spawnSync(require('ffmpeg-static'), ['-v', 'error', '-i', saved, '-vn', '-ar', '48000', '-ac', '2', '-f', 'f32le', 'pipe:1'], { windowsHide: true, maxBuffer: 16 * 1024 * 1024 });
       assert.equal(decode.status, 0, decode.stderr?.toString());
       const pcm = new Float32Array(decode.stdout.buffer, decode.stdout.byteOffset, decode.stdout.byteLength / 4);
@@ -134,7 +139,7 @@ const { createHash } = require('node:crypto');
       recordings.push({ format, paused, saved, captured, mime: capture.mime, audioHash, byteIdentical: true, duration: frames / rate, channels });
     }
     await page.evaluate(() => window.testTone.oscillators.forEach((oscillator) => oscillator.stop()));
-    const report = { passed: true, captureSettings, recordings, checks: ['real Windows loopback settings: stereo and speech processing disabled', 'AAC captured directly, encoded packets identical after MP4 save', 'WebM directly records Opus stereo audio without transcoding on save', 'both audio codecs pause and resume without retaining pause duration', 'controlled synthetic stereo SNR over 30 dB', 'no clipping of test signal', 'no 50 ms test-tone dropouts in measured continuous segment', 'source audio survives all recordings'] };
+    const report = { passed: true, captureSettings, recordings, checks: ['real Windows loopback settings: stereo and speech processing disabled', 'AAC captured directly, encoded packets identical after MP4 save', 'WebM directly records Opus stereo audio without transcoding on save', 'both audio codecs pause and resume without retaining pause duration', 'controlled synthetic stereo SNR over 30 dB', 'no clipping of test signal', 'no 50 ms test-tone dropouts in measured continuous segment', 'capture inputs released after each recording; repeated recordings reconnect'] };
     await fs.writeFile(path.join(output, 'report.json'), JSON.stringify(report, null, 2));
     console.log(JSON.stringify(report, null, 2));
   } catch (error) {

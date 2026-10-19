@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('onrecord', {
   onRegionChanged: (callback) => ipcRenderer.on('region-changed', (_, state) => callback(state)),
   onRegionClosed: (callback) => ipcRenderer.on('region-closed', () => callback()),
   folder: () => ipcRenderer.invoke('folder'),
+  openDirectory: () => ipcRenderer.invoke('open-directory'),
   preferences: () => ipcRenderer.invoke('preferences'),
   savePreferences: (values) => ipcRenderer.invoke('save-preferences', values),
   onPreferencesError: (callback) => ipcRenderer.on('preferences-error', (_, message) => callback(message)),
