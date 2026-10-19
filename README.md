@@ -11,7 +11,7 @@ npm install
 npm start
 ```
 
-`npm run dist`로 `release/OnRecord 1.2.0.exe` 포터블 실행 파일을 만듭니다. 설치 없이 실행할 수 있으며, 녹화 파일은 기본적으로 Windows 동영상 폴더의 OnRecord 하위에 저장됩니다.
+`npm run dist`로 실행 폴더 `release/win-unpacked/`와 배포용 ZIP `release/OnRecord-1.2.0-win-x64.zip`을 만듭니다. ZIP을 원하는 위치에 전부 압축 해제한 뒤 폴더 안의 `OnRecord.exe`를 실행합니다. 설치는 필요 없으며, EXE만 따로 옮기지 말고 `resources` 등 함께 포함된 파일과 폴더를 유지해야 합니다. 녹화 파일은 기본적으로 Windows 동영상 폴더의 OnRecord 하위에 저장됩니다.
 
 ## 사용
 
@@ -63,7 +63,7 @@ node tests/compression-options.cjs
 
 압축 옵션 UI 검사는 `node tests/compression-options.cjs`로 실행하며 설명 팝업·창 크기별 배치·WebM 비활성화·재실행 복원을 확인합니다.
 
-저장 경로 검사는 `npm run test:saving`으로 실행합니다. 세 저장 압축 모드의 실제 저장 동작을 검사합니다. H.264 영상 재압축과 용량 감소, 프레임 수·영상 길이 유지, AAC 패킷의 저장 전후 동일성, 소리 포함 1080p/30fps와 무음 1080p/60fps MP4, 전체 디코딩과 중간 탐색·재생, 장치 해제와 재녹화, 파일 마무리 실패 시 원본 보존, H.264 미지원 안내, 녹화 중 강제 종료 후 원본 디코딩을 확인합니다. 별도 사용자 데이터 폴더를 사용하며 결과는 `work/finalization-*/report.json`에 저장합니다. `ONRECORD_TEST_SECONDS=180`처럼 설정하면 첫 녹화 시간을 늘릴 수 있고, `ONRECORD_EXECUTABLE`에 `release/win-unpacked/OnRecord.exe` 경로를 넣어 패키징된 앱을 검사할 수 있습니다. 포터블 실행 파일은 `node tests/portable-recording.cjs`로 별도 실행해 소리 포함·무음 MP4 녹화와 저장을 확인합니다. 자원 사용량·지원 GPU의 NVENC 통계·Windows 작업 표시줄 응답도 기록합니다. 이는 해당 환경과 실행 시간에 한정된 확인이며 모든 장시간 멈춤 현상의 해결을 보장하지 않습니다.
+저장 경로 검사는 `npm run test:saving`으로 실행합니다. 세 저장 압축 모드의 실제 저장 동작을 검사합니다. H.264 영상 재압축과 용량 감소, 프레임 수·영상 길이 유지, AAC 패킷의 저장 전후 동일성, 소리 포함 1080p/30fps와 무음 1080p/60fps MP4, 전체 디코딩과 중간 탐색·재생, 장치 해제와 재녹화, 파일 마무리 실패 시 원본 보존, H.264 미지원 안내, 녹화 중 강제 종료 후 원본 디코딩을 확인합니다. 별도 사용자 데이터 폴더를 사용하며 결과는 `work/finalization-*/report.json`에 저장합니다. `ONRECORD_TEST_SECONDS=180`처럼 설정하면 첫 녹화 시간을 늘릴 수 있고, `ONRECORD_EXECUTABLE`에 `release/win-unpacked/OnRecord.exe` 경로를 넣어 패키징된 앱을 검사할 수 있습니다. 폴더형 배포 앱은 `node tests/portable-recording.cjs`로 별도 실행해 소리 포함·무음 MP4 녹화와 저장을 확인합니다. 자원 사용량·지원 GPU의 NVENC 통계·Windows 작업 표시줄 응답도 기록합니다. 이는 해당 환경과 실행 시간에 한정된 확인이며 모든 장시간 멈춤 현상의 해결을 보장하지 않습니다.
 
 실행 의존성은 `npm audit --omit=dev`에서 알려진 취약점이 없었습니다. 개발용 패키징 도구인 electron-builder의 하위 의존성에서는 moderate 등급 8건이 보고됩니다.
 
