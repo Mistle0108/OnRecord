@@ -8,7 +8,10 @@ let drawTimer, clockTimer, startedAt = 0, pauseAt = 0, pausedTime = 0;
 let phase = 'idle', captureHasAudio = false, chunkQueue = Promise.resolve(), writeError = null;
 let previewOperation = false, latestRegion = null, initializing = true;
 
-const preferenceFields = { systemAudio: '#system-audio', microphone: '#microphone', micDevice: '#mic-device', resolution: '#resolution', fps: '#fps', quality: '#quality', format: '#format', webcam: '#webcam', webcamPosition: '#webcam-position', delay: '#delay' };
+const preferenceFields = { systemAudio: '#system-audio', microphone: '#microphone', micDevice: '#mic-device', resolution: '#resolution', fps: '#fps', quality: '#quality', format: '#format', compression: '#compression', webcam: '#webcam', webcamPosition: '#webcam-position', delay: '#delay' };
+function updateCompression() {
+  $('#compression').disabled = $('#format').value !== 'mp4';
+}
 function rememberPreferences() {
   if (initializing) return;
   const values = { captureMode: mode };
@@ -49,10 +52,26 @@ function setPhase(next) {
   $('#record').classList.toggle('is-recording', next === 'recording');
   window.recordIcons.set('.record-dot', next === 'recording' ? 'stop' : 'record');
   $('#record-label').textContent = { idle: '녹화 시작', starting: '준비 중', countdown: '시작 대기', recording: '녹화 종료', saving: '저장 중' }[next];
-  $('#status').textContent = { idle: '녹화 준비', starting: '장치 확인 중', countdown: '잠시 후 시작합니다', recording: '녹화 중', saving: '영상을 저장하고 있어요' }[next];
+  $('#status').textContent = { idle: '녹화 준비', starting: '장치 확인 중', countdown: '잠시 후 시작합니다', recording: '녹화 중', saving: $('#format').value === 'mp4' && $('#compression').value !== 'none' ? '용량을 줄여 저장하고 있어요' : '영상을 저장하고 있어요' }[next];
   $('#capture-label').textContent = next === 'recording' ? '녹화 중' : '준비';
 }
 function stopTracks(stream) { stream?.getTracks().forEach((track) => track.stop()); }
+async function releaseRecordingInputs() {
+  clearInterval(drawTimer); drawTimer = null;
+  const previousScreen = screenStream;
+  screenStream = null;
+  stopTracks(recordedStream); recordedStream = null;
+  stopTracks(previousScreen);
+  stopTracks(micStream); micStream = null;
+  stopTracks(cameraStream); cameraStream = null;
+  video.srcObject = null; camera.srcObject = null;
+  micNode = null; analyser = null; audioDestination = null;
+  $('#mic-level').style.width = '0%';
+  if (audioContext) {
+    const previousContext = audioContext; audioContext = null;
+    await previousContext.close().catch(() => {});
+  }
+}
 function sizeCanvas() {
   if (!video.videoWidth) return;
   const width = video.videoWidth * (crop?.width || 1), height = video.videoHeight * (crop?.height || 1);
@@ -248,7 +267,7 @@ async function startRecording() {
   clearNotice(); $('#result').hidden = true;
   setPhase('starting');
   try {
-    if (captureHasAudio !== $('#system-audio').checked) {
+    if (!screenStream?.active || captureHasAudio !== $('#system-audio').checked) {
       await connectScreen(source, crop);
       if (mode === 'region') applyRegion(latestRegion);
       setPhase('starting');
@@ -276,9 +295,11 @@ async function startRecording() {
       audioDestination.stream.getAudioTracks().forEach((track) => recordedStream.addTrack(track));
     }
     const hasAudio = recordedStream.getAudioTracks().length > 0;
-    const candidates = !hasAudio ? ['video/webm;codecs=vp9', 'video/webm;codecs=vp8'] : $('#format').value === 'webm' ? ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus'] : ['video/mp4;codecs=vp9,mp4a.40.2', 'video/mp4;codecs=avc1.42001E,mp4a.40.2'];
+    const candidates = $('#format').value === 'mp4'
+      ? [hasAudio ? 'video/mp4;codecs=avc1.42001E,mp4a.40.2' : 'video/mp4;codecs=avc1.42001E']
+      : hasAudio ? ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus'] : ['video/webm;codecs=vp9', 'video/webm;codecs=vp8'];
     const mimeType = candidates.find((mime) => MediaRecorder.isTypeSupported(mime));
-    if (!mimeType) throw new Error('현재 환경에서 선택한 녹화 형식을 지원하지 않습니다. 다른 파일 형식을 선택해 주세요.');
+    if (!mimeType) throw new Error('현재 환경에서 선택한 녹화 코덱을 지원하지 않습니다. WebM 형식을 선택해 주세요.');
     recorder = new MediaRecorder(recordedStream, { mimeType, videoBitsPerSecond: $('#quality').value === 'high' ? 12000000 : 6000000, audioBitsPerSecond: 320000 });
     writeError = null; chunkQueue = Promise.resolve();
     recorder.ondataavailable = (event) => {
@@ -289,14 +310,13 @@ async function startRecording() {
       }).catch((error) => { writeError = error; if (phase === 'recording') stopRecording(); });
     };
     recorder.onerror = (event) => { writeError = event.error || new Error('녹화 장치 오류'); if (phase === 'recording') stopRecording(); };
-    await api.begin({ format: $('#format').value, hasAudio, quality: $('#quality').value, fps: Number($('#fps').value) });
+    await api.begin({ format: $('#format').value, compression: $('#compression').value });
     recorder.start(1000);
     startedAt = performance.now(); pausedTime = 0; pauseAt = 0;
     setPhase('recording'); tick(); clockTimer = setInterval(tick, 250);
   } catch (error) {
     $('#countdown').hidden = true;
-    stopTracks(recordedStream);
-    if (audioContext) { await audioContext.close().catch(() => {}); audioContext = null; micNode = null; analyser = null; }
+    await releaseRecordingInputs();
     await api.abort(); setPhase('idle'); notify(`녹화를 시작하지 못했습니다. ${error.message}`);
   }
 }
@@ -305,6 +325,7 @@ async function stopRecording() {
   setPhase('saving'); clearInterval(clockTimer); tick();
   try {
     await new Promise((resolve) => { recorder.onstop = resolve; if (recorder.state !== 'inactive') recorder.stop(); else resolve(); });
+    await releaseRecordingInputs();
     await chunkQueue;
     if (writeError) throw writeError;
     const result = await api.finish();
@@ -315,11 +336,8 @@ async function stopRecording() {
     const partial = await api.abort();
     notify(`저장하지 못했습니다. ${error.message}${partial ? `\n복구용 원본: ${partial}` : ''}`);
   } finally {
-    stopTracks(recordedStream); recordedStream = null;
-    if (audioContext) { await audioContext.close().catch(() => {}); audioContext = null; }
-    micNode = null; analyser = null;
+    await releaseRecordingInputs();
     setPhase('idle');
-    if ($('#microphone').checked) connectMic().catch(() => {});
   }
 }
 function pauseRecording() {
@@ -354,9 +372,13 @@ function showDirectory(directory) {
   $('#directory').title = directory;
 }
 $('#choose-folder').onclick = async () => { try { const directory = await api.folder(); if (directory) showDirectory(directory); } catch (error) { notify(error.message); } };
+$('#open-directory').onclick = async () => { try { const error = await api.openDirectory(); if (error) notify(error); } catch (error) { notify(error.message); } };
 $('#record').onclick = () => phase === 'recording' ? stopRecording() : startRecording();
 $('#resolution').onchange = sizeCanvas;
 $('#fps').onchange = () => { sizeCanvas(); restartDrawing(); };
+$('#format').onchange = updateCompression;
+$('#compression-help').onclick = () => $('#compression-dialog').showModal();
+$('#close-compression-dialog').onclick = () => $('#compression-dialog').close();
 $('#microphone').onchange = () => connectMic().catch(() => {});
 $('#mic-device').onchange = () => connectMic().catch(() => {});
 $('#webcam').onchange = () => connectCamera().catch(() => {});
@@ -380,6 +402,7 @@ window.initializeOnRecord = async () => {
       const input = $(selector);
       if (input.type === 'checkbox') input.checked = preferences[key]; else input.value = preferences[key];
     }
+    updateCompression();
     setCaptureMode(preferences.captureMode);
     showDirectory(preferences.directory);
     await listMicrophones(preferences.micDevice);
